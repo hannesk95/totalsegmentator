@@ -163,35 +163,35 @@ class MixtureOfExperts(nn.Module):
         #############################################
 
         # Organ
-        self.unet_organ = UNet(pretrain_path="/home/johannes/Code/totalsegmentator/data/pretrained_weights/Dataset291_TotalSegmentator_part1_organs_1559subj/Dataset291_TotalSegmentator_part1_organs_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
+        self.unet_organ = UNet(pretrain_path="./data/pretrained_weights/Dataset291_TotalSegmentator_part1_organs_1559subj/Dataset291_TotalSegmentator_part1_organs_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
                                num_classes=25)
         for param in self.unet_organ.parameters():
             param.requires_grad = False        
         self.encoder1 = self.unet_organ.model.encoder
         
         # Vertebrae
-        self.unet_vertebrae = UNet(pretrain_path="/home/johannes/Code/totalsegmentator/data/pretrained_weights/Dataset292_TotalSegmentator_part2_vertebrae_1532subj/Dataset292_TotalSegmentator_part2_vertebrae_1532subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
+        self.unet_vertebrae = UNet(pretrain_path="./data/pretrained_weights/Dataset292_TotalSegmentator_part2_vertebrae_1532subj/Dataset292_TotalSegmentator_part2_vertebrae_1532subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
                                num_classes=27)
         for param in self.unet_vertebrae.parameters():
             param.requires_grad = False        
         self.encoder2 = self.unet_vertebrae.model.encoder
         
         # Cardiac
-        self.unet_cardiac = UNet(pretrain_path="/home/johannes/Code/totalsegmentator/data/pretrained_weights/Dataset293_TotalSegmentator_part3_cardiac_1559subj/Dataset293_TotalSegmentator_part3_cardiac_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
+        self.unet_cardiac = UNet(pretrain_path="./data/pretrained_weights/Dataset293_TotalSegmentator_part3_cardiac_1559subj/Dataset293_TotalSegmentator_part3_cardiac_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
                                num_classes=19)
         for param in self.unet_cardiac.parameters():
             param.requires_grad = False        
         self.encoder3 = self.unet_cardiac.model.encoder
         
         # Muscle
-        self.unet_muscle = UNet(pretrain_path="/home/johannes/Code/totalsegmentator/data/pretrained_weights/Dataset294_TotalSegmentator_part4_muscles_1559subj/Dataset294_TotalSegmentator_part4_muscles_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
+        self.unet_muscle = UNet(pretrain_path="./data/pretrained_weights/Dataset294_TotalSegmentator_part4_muscles_1559subj/Dataset294_TotalSegmentator_part4_muscles_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
                                 num_classes=24)
         for param in self.unet_muscle.parameters():
             param.requires_grad = False
         self.encoder4 = self.unet_muscle.model.encoder
 
         # Ribs
-        self.unet_ribs = UNet(pretrain_path="/home/johannes/Code/totalsegmentator/data/pretrained_weights/Dataset295_TotalSegmentator_part5_ribs_1559subj/Dataset295_TotalSegmentator_part5_ribs_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
+        self.unet_ribs = UNet(pretrain_path="./data/pretrained_weights/Dataset295_TotalSegmentator_part5_ribs_1559subj/Dataset295_TotalSegmentator_part5_ribs_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
                                 num_classes=27)
         for param in self.unet_ribs.parameters():
             param.requires_grad = False

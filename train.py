@@ -38,7 +38,7 @@ epochs = 600
 ############################################
 print_config()
 
-data_dir = f"/home/johannes/Code/totalsegmentator/data/msd_datasets/{task}/{task}"
+data_dir = f"./data/msd_datasets/{task}/{task}"
 
 
 train_images = sorted(glob.glob(os.path.join(data_dir, "imagesTr", "*.nii.gz")))
@@ -48,7 +48,7 @@ data_dicts = [{"image": image_name, "label": label_name} for image_name, label_n
 kf = KFold(n_splits=splits, shuffle=True, random_state=42)
 for fold, (train_idx, val_idx) in enumerate(kf.split(data_dicts)):
 
-    root_dir = f"/home/johannes/Code/totalsegmentator/results/{task}"
+    root_dir = f"./results/{task}"
     if not os.path.exists(root_dir):
         os.makedirs(root_dir)
 
