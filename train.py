@@ -38,7 +38,7 @@ epochs = 600
 ############################################
 print_config()
 
-data_dir = f"./data/msd_datasets/{task}/{task}"
+data_dir = f"./data/msd_datasets/{task}/"
 
 
 train_images = sorted(glob.glob(os.path.join(data_dir, "imagesTr", "*.nii.gz")))
