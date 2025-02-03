@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-# from monai.networks.blocks.squeeze_and_excitation import ChannelSELayer, ResidualSELayer
+from monai.networks.blocks.squeeze_and_excitation import ChannelSELayer
 from monai.networks.layers.factories import Act, Pool
 
 class ConvDropoutNormReLU(nn.Module):
@@ -121,7 +121,7 @@ class UNet(nn.Module):
     def forward(self, x):
         return self.model(x)
 
-class ChannelSELayer(nn.Module):
+class ChannelSELayerOwn(nn.Module):
     def __init__(self, spatial_dims: int, in_channels: int, number_of_remaining_feature_maps: int = 2, acti_type_1: str = "leakyrelu", acti_type_2: str = "sigmoid"):
         super(ChannelSELayer, self).__init__()
 
@@ -155,8 +155,16 @@ class ChannelSELayer(nn.Module):
         return sliced_tensor
 
 class MixtureOfExperts(nn.Module):
-    def __init__(self):
+    def __init__(self, own_se: bool = False, unfreeze_epoch: int = 0):
         super().__init__()
+
+        self.own_se = own_se
+        self.unfreeze_epoch = unfreeze_epoch
+        self.bottleneck_attention1 = 0.0
+        self.bottleneck_attention2 = 0.0
+        self.bottleneck_attention3 = 0.0
+        self.bottleneck_attention4 = 0.0
+        self.bottleneck_attention5 = 0.0
 
         #############################################
         # Encoder ###################################
@@ -230,14 +238,30 @@ class MixtureOfExperts(nn.Module):
         # Squeeeze & Excitation #######################
         ###############################################
 
-        self.se0 = ChannelSELayer(spatial_dims=3, in_channels=5*32, number_of_remaining_feature_maps=32)
-        self.se1 = ChannelSELayer(spatial_dims=3, in_channels=5*64, number_of_remaining_feature_maps=64)
-        self.se2 = ChannelSELayer(spatial_dims=3, in_channels=5*128, number_of_remaining_feature_maps=128)
-        self.se3 = ChannelSELayer(spatial_dims=3, in_channels=5*256, number_of_remaining_feature_maps=256)
-        self.se4 = ChannelSELayer(spatial_dims=3, in_channels=5*320, number_of_remaining_feature_maps=320)
-        self.se5 = ChannelSELayer(spatial_dims=3, in_channels=5*320, number_of_remaining_feature_maps=320)        
+        if own_se:
+            self.se0 = ChannelSELayerOwn(spatial_dims=3, in_channels=5*32, number_of_remaining_feature_maps=32)
+            self.se1 = ChannelSELayerOwn(spatial_dims=3, in_channels=5*64, number_of_remaining_feature_maps=64)
+            self.se2 = ChannelSELayerOwn(spatial_dims=3, in_channels=5*128, number_of_remaining_feature_maps=128)
+            self.se3 = ChannelSELayerOwn(spatial_dims=3, in_channels=5*256, number_of_remaining_feature_maps=256)
+            self.se4 = ChannelSELayerOwn(spatial_dims=3, in_channels=5*320, number_of_remaining_feature_maps=320)
+            self.se5 = ChannelSELayerOwn(spatial_dims=3, in_channels=5*320, number_of_remaining_feature_maps=320)  
 
-    def forward(self, x):
+        else:
+            self.se0 = ChannelSELayer(spatial_dims=3, in_channels=5*32, r=5) 
+            self.se1 = ChannelSELayer(spatial_dims=3, in_channels=5*64, r=5)
+            self.se2 = ChannelSELayer(spatial_dims=3, in_channels=5*128, r=5)
+            self.se3 = ChannelSELayer(spatial_dims=3, in_channels=5*256, r=5)
+            self.se4 = ChannelSELayer(spatial_dims=3, in_channels=5*320, r=5)
+            self.se5 = ChannelSELayer(spatial_dims=3, in_channels=5*320, r=5)     
+
+            self.conv0 = nn.Conv3d(in_channels=5*32, out_channels=32, kernel_size=1, stride=1, padding=0)
+            self.conv1 = nn.Conv3d(in_channels=5*64, out_channels=64, kernel_size=1, stride=1, padding=0)
+            self.conv2 = nn.Conv3d(in_channels=5*128, out_channels=128, kernel_size=1, stride=1, padding=0)
+            self.conv3 = nn.Conv3d(in_channels=5*256, out_channels=256, kernel_size=1, stride=1, padding=0)
+            self.conv4 = nn.Conv3d(in_channels=5*320, out_channels=320, kernel_size=1, stride=1, padding=0)
+            self.conv5 = nn.Conv3d(in_channels=5*320, out_channels=320, kernel_size=1, stride=1, padding=0)
+
+    def forward(self, x, epoch = 50):
 
         temp = x
         encoder1_outputs = []
@@ -277,6 +301,63 @@ class MixtureOfExperts(nn.Module):
         encoder_outputs.append(self.se4(torch.concat([encoder1_outputs[4], encoder2_outputs[4], encoder3_outputs[4], encoder4_outputs[4], encoder5_outputs[4]], dim=1)))
         encoder_outputs.append(self.se5(torch.concat([encoder1_outputs[5], encoder2_outputs[5], encoder3_outputs[5], encoder4_outputs[5], encoder5_outputs[5]], dim=1)))
 
+        if not self.own_se:
+            
+            encoder_outputs = []
+            encoder_outputs.append(self.se0(torch.concat([encoder1_outputs[0], encoder2_outputs[0], encoder3_outputs[0], encoder4_outputs[0], encoder5_outputs[0]], dim=1))[0])
+            encoder_outputs.append(self.se1(torch.concat([encoder1_outputs[1], encoder2_outputs[1], encoder3_outputs[1], encoder4_outputs[1], encoder5_outputs[1]], dim=1))[0])
+            encoder_outputs.append(self.se2(torch.concat([encoder1_outputs[2], encoder2_outputs[2], encoder3_outputs[2], encoder4_outputs[2], encoder5_outputs[2]], dim=1))[0])
+            encoder_outputs.append(self.se3(torch.concat([encoder1_outputs[3], encoder2_outputs[3], encoder3_outputs[3], encoder4_outputs[3], encoder5_outputs[3]], dim=1))[0])
+            encoder_outputs.append(self.se4(torch.concat([encoder1_outputs[4], encoder2_outputs[4], encoder3_outputs[4], encoder4_outputs[4], encoder5_outputs[4]], dim=1))[0])
+            encoder_outputs.append(self.se5(torch.concat([encoder1_outputs[5], encoder2_outputs[5], encoder3_outputs[5], encoder4_outputs[5], encoder5_outputs[5]], dim=1))[0])
+
+            encoder_outputs[0] = self.conv0(encoder_outputs[0])
+            encoder_outputs[1] = self.conv1(encoder_outputs[1])
+            encoder_outputs[2] = self.conv2(encoder_outputs[2])
+            encoder_outputs[3] = self.conv3(encoder_outputs[3])
+            encoder_outputs[4] = self.conv4(encoder_outputs[4])
+            encoder_outputs[5] = self.conv5(encoder_outputs[5])
+
+            _, scores = self.se5(torch.concat([encoder1_outputs[5], encoder2_outputs[5], encoder3_outputs[5], encoder4_outputs[5], encoder5_outputs[5]], dim=1))
+
+            ratios = torch.zeros(5)
+            if epoch == self.unfreeze_epoch:
+                for i in range(scores.shape[0]):
+                    temp = torch.flatten(scores[i])
+
+                    top_indices = torch.topk(temp, k=320).indices
+                    
+                    source_labels = torch.zeros(1600, dtype=torch.int)
+                    source_labels[0:319] = 1   # source_1
+                    source_labels[320:639] = 2  # source_2
+                    source_labels[640:959] = 3  # source_3
+                    source_labels[960:1279] = 4  # source_4
+                    source_labels[1280:1599] = 5  # source_5
+
+                    # Get the sources of the top 320 values
+                    top_sources = source_labels[top_indices]
+
+                    # Count occurrences of each source
+                    source_counts = {f"source_{i}": (top_sources == i).sum().item() for i in range(1, 6)}
+
+                    total_selected = len(top_sources)
+                    source_ratios = {key: count / total_selected for key, count in source_counts.items()}
+                    ratios = ratios + torch.tensor(list(source_ratios.values()))
+
+                enc_idx = torch.argmax(ratios).item()
+
+                param_dict = {0: self.unet_organ.parameters(),
+                              1: self.unet_vertebrae.parameters(),
+                              2: self.unet_cardiac.parameters(),
+                              3: self.unet_muscle.parameters(),
+                              4: self.unet_ribs.parameters()}
+
+                
+                # Unfreeze Encoder
+                for param in param_dict[enc_idx]:
+                    param.requires_grad = True 
+
+
         x = encoder_outputs[-1]
         
         seg_outputs = []
@@ -291,7 +372,7 @@ class MixtureOfExperts(nn.Module):
 
 if __name__ == "__main__":
 
-    input_tensor = torch.randn(8, 1, 128, 128, 128)  
+    input_tensor = torch.randn(2, 1, 128, 128, 128)  
     
     weights = "/home/johannes/Code/totalsegmentator/Dataset305_vertebrae_discs_1559subj/nnUNetTrainer_DASegOrd0__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth"   
 
@@ -315,13 +396,13 @@ if __name__ == "__main__":
     output = model(input_tensor)
     print(output.shape) 
 
-    target_structure = "organs"
-    model = UNet(pretrain_path=weights[target_structure], num_classes=classes[target_structure])    
-    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Number of parameters: {total_params}")
-    output = model(input_tensor)
-    print(output.shape) 
+    # target_structure = "organs"
+    # model = UNet(pretrain_path=weights[target_structure], num_classes=classes[target_structure])    
+    # total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # print(f"Number of parameters: {total_params}")
+    # output = model(input_tensor)
+    # print(output.shape) 
 
-    encoder = model.model.encoder
-    output = encoder(input_tensor)
-    print(output.shape)
+    # encoder = model.model.encoder
+    # output = encoder(input_tensor)
+    # print(output.shape)
