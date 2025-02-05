@@ -34,7 +34,7 @@ from sklearn.model_selection import KFold
 ############################################
 task = "Task09_Spleen"
 splits = 5
-epochs = 600
+epochs = 1000
 ############################################
 print_config()
 
@@ -46,9 +46,6 @@ data_dicts = [{"image": image_name, "label": label_name} for image_name, label_n
 
 kf = KFold(n_splits=splits, shuffle=True, random_state=42)
 for fold, (train_idx, val_idx) in enumerate(kf.split(data_dicts)):
-
-    if fold == 0:
-        continue
 
     root_dir = f"./results/{task}"
     if not os.path.exists(root_dir):
@@ -179,10 +176,8 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(data_dicts)):
         epoch_loss_values.append(epoch_loss)
         print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
 
-        if epoch == 120:
-            break
-
-        if (epoch + 1) % val_interval == 0:
+        # if (epoch + 1) % val_interval == 0:
+        if (epoch + 1) == max_epochs:
             model.eval()
             with torch.no_grad():
                 for idx, val_data in enumerate(val_loader):
@@ -197,9 +192,6 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(data_dicts)):
                     val_labels = [post_label(i) for i in decollate_batch(val_labels)]
                     # compute metric for current iteration
                     dice_metric(y_pred=val_outputs, y=val_labels)
-                    
-                    if idx == 2:
-                        break
 
                 # aggregate the final mean dice result
                 metric = dice_metric.aggregate().item()
