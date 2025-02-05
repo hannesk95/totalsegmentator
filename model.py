@@ -155,7 +155,7 @@ class ChannelSELayerOwn(nn.Module):
         return sliced_tensor
 
 class MixtureOfExperts(nn.Module):
-    def __init__(self, own_se: bool = False, unfreeze_epoch: int = 100):
+    def __init__(self, own_se: bool = False, unfreeze_epoch: int = 500):
         super().__init__()
 
         self.own_se = own_se
