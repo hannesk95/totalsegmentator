@@ -47,6 +47,9 @@ data_dicts = [{"image": image_name, "label": label_name} for image_name, label_n
 kf = KFold(n_splits=splits, shuffle=True, random_state=42)
 for fold, (train_idx, val_idx) in enumerate(kf.split(data_dicts)):
 
+    if fold == 0:
+        continue
+
     root_dir = f"./results/{task}"
     if not os.path.exists(root_dir):
         os.makedirs(root_dir)
@@ -166,7 +169,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(data_dicts)):
                 batch_data["label"].to(device),
             )
             optimizer.zero_grad()
-            outputs = model(inputs)
+            outputs = model(inputs, epoch=epoch)
             loss = loss_function(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -176,21 +179,27 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(data_dicts)):
         epoch_loss_values.append(epoch_loss)
         print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
 
+        if epoch == 120:
+            break
+
         if (epoch + 1) % val_interval == 0:
             model.eval()
             with torch.no_grad():
-                for val_data in val_loader:
+                for idx, val_data in enumerate(val_loader):
                     val_inputs, val_labels = (
                         val_data["image"].to(device),
                         val_data["label"].to(device),
                     )
-                    roi_size = (160, 160, 160)
+                    roi_size = (96, 96, 96)
                     sw_batch_size = 4
                     val_outputs = sliding_window_inference(val_inputs, roi_size, sw_batch_size, model)
                     val_outputs = [post_pred(i) for i in decollate_batch(val_outputs)]
                     val_labels = [post_label(i) for i in decollate_batch(val_labels)]
                     # compute metric for current iteration
                     dice_metric(y_pred=val_outputs, y=val_labels)
+                    
+                    if idx == 2:
+                        break
 
                 # aggregate the final mean dice result
                 metric = dice_metric.aggregate().item()

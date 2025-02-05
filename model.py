@@ -160,12 +160,7 @@ class MixtureOfExperts(nn.Module):
 
         self.own_se = own_se
         self.unfreeze_epoch = unfreeze_epoch
-        self.scores = torch.zeros(5)
-        # self.bottleneck_attention1 = 0.0
-        # self.bottleneck_attention2 = 0.0
-        # self.bottleneck_attention3 = 0.0
-        # self.bottleneck_attention4 = 0.0
-        # self.bottleneck_attention5 = 0.0
+        self.scores = torch.zeros(5).cuda()        
 
         #############################################
         # Encoder ###################################
@@ -219,7 +214,7 @@ class MixtureOfExperts(nn.Module):
         ])
 
         for param in self.stages.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
 
         self.transpconvs = nn.ModuleList([
             nn.ConvTranspose3d(320, 320, kernel_size=(2, 2, 2), stride=(2, 2, 2)), 
@@ -230,7 +225,7 @@ class MixtureOfExperts(nn.Module):
         ])
 
         for param in self.transpconvs.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
         
         num_classes = 2
         self.seg_layers = nn.ModuleList([
@@ -242,13 +237,13 @@ class MixtureOfExperts(nn.Module):
         ])
 
         for param in self.seg_layers.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
 
         ###############################################
         # Squeeeze & Excitation #######################
         ###############################################
 
-        if own_se:
+        if self.own_se:
             self.se0 = ChannelSELayerOwn(spatial_dims=3, in_channels=5*32, number_of_remaining_feature_maps=32)
             self.se1 = ChannelSELayerOwn(spatial_dims=3, in_channels=5*64, number_of_remaining_feature_maps=64)
             self.se2 = ChannelSELayerOwn(spatial_dims=3, in_channels=5*128, number_of_remaining_feature_maps=128)
@@ -264,14 +259,14 @@ class MixtureOfExperts(nn.Module):
             self.se4 = nn.Identity()#ChannelSELayer(spatial_dims=3, in_channels=5*320, r=5)
             self.se5 = nn.Identity()#ChannelSELayer(spatial_dims=3, in_channels=5*320, r=5)     
 
-            self.conv0 = nn.Conv3d(in_channels=5*32, out_channels=32, kernel_size=1, stride=1, padding=0)
-            self.conv1 = nn.Conv3d(in_channels=5*64, out_channels=64, kernel_size=1, stride=1, padding=0)
-            self.conv2 = nn.Conv3d(in_channels=5*128, out_channels=128, kernel_size=1, stride=1, padding=0)
-            self.conv3 = nn.Conv3d(in_channels=5*256, out_channels=256, kernel_size=1, stride=1, padding=0)
-            self.conv4 = nn.Conv3d(in_channels=5*320, out_channels=320, kernel_size=1, stride=1, padding=0)
-            self.conv5 = nn.Conv3d(in_channels=5*320, out_channels=320, kernel_size=1, stride=1, padding=0)
+            self.conv0 = nn.Conv3d(in_channels=5*32, out_channels=32, kernel_size=1, bias=False)
+            self.conv1 = nn.Conv3d(in_channels=5*64, out_channels=64, kernel_size=1, bias=False)
+            self.conv2 = nn.Conv3d(in_channels=5*128, out_channels=128, kernel_size=1, bias=False)
+            self.conv3 = nn.Conv3d(in_channels=5*256, out_channels=256, kernel_size=1, bias=False)
+            self.conv4 = nn.Conv3d(in_channels=5*320, out_channels=320, kernel_size=1, bias=False)
+            self.conv5 = nn.Conv3d(in_channels=5*320, out_channels=320, kernel_size=1, bias=False)
 
-    def forward(self, x, epoch = 100):
+    def forward(self, x, epoch=None):
 
         temp = x
         encoder1_outputs = []
@@ -328,22 +323,30 @@ class MixtureOfExperts(nn.Module):
             encoder_outputs[4] = self.conv4(encoder_outputs[4])
             encoder_outputs[5] = self.conv5(encoder_outputs[5])
 
-            if epoch == self.unfreeze_epoch:                
-                scores0 = self.get_importance_from_weights(weights=self.conv0.weight)
-                scores1 = self.get_importance_from_weights(weights=self.conv1.weight)
-                scores2 = self.get_importance_from_weights(weights=self.conv2.weight)
-                scores3 = self.get_importance_from_weights(weights=self.conv3.weight)
-                scores4 = self.get_importance_from_weights(weights=self.conv4.weight)
-                scores5 = self.get_importance_from_weights(weights=self.conv5.weight)
+            if epoch == self.unfreeze_epoch: 
+                
+                print("Calculating scores!")
 
-                self.scores = self.scores + ((scores0+scores1+scores2+scores3+scores4+scores5) / 5)                
+                scores0 = self.get_importance_from_weights_v2(weights=self.conv0.weight)
+                scores1 = self.get_importance_from_weights_v2(weights=self.conv1.weight)
+                scores2 = self.get_importance_from_weights_v2(weights=self.conv2.weight)
+                scores3 = self.get_importance_from_weights_v2(weights=self.conv3.weight)
+                scores4 = self.get_importance_from_weights_v2(weights=self.conv4.weight)
+                scores5 = self.get_importance_from_weights_v2(weights=self.conv5.weight)
+
+                self.scores = self.scores + ((scores0+scores1+scores2+scores3+scores4+scores5) / 5).cuda()                
 
             if epoch == self.unfreeze_epoch+1:
                 
                 enc_idx = torch.argmax(self.scores).item()
 
                 print(f"Unfreezing encoder: {enc_idx}")
-                print(f"All encoder scores: {self.scores}")                
+                print(f"All encoder scores: {self.scores}")       
+
+                with open('scores.txt', 'a') as file:
+                    # print("This is a new line.", file=file)  # Write to file as a new line     
+                    print(f"Unfreezing encoder: {enc_idx}", file=file)
+                    print(f"All encoder scores: {self.scores}", file=file)      
 
                 param_dict = {0: self.unet_organ.parameters(),
                               1: self.unet_vertebrae.parameters(),
@@ -409,12 +412,12 @@ class MixtureOfExperts(nn.Module):
         n_input_fmaps = weights.shape[1]
         n_output_fmaps = weights.shape[0]
 
-        ratios = torch.zeros(5)
+        ratios = torch.zeros(5).cuda()
         for i in range(weights.shape[0]):
-            temp = torch.flatten(weights[i])
-            top_indices = torch.topk(temp, k=n_output_fmaps).indices
+            temp = torch.flatten(weights[i]).cuda()
+            top_indices = torch.topk(temp, k=n_output_fmaps).indices.cuda()
                     
-            source_labels = torch.zeros(n_input_fmaps, dtype=torch.int)
+            source_labels = torch.zeros(n_input_fmaps, dtype=torch.int).cuda()
             source_labels[(0*n_output_fmaps):(1*n_output_fmaps-1)] = 1   # source_1
             source_labels[(1*n_output_fmaps):(2*n_output_fmaps-1)] = 2  # source_2
             source_labels[(2*n_output_fmaps):(3*n_output_fmaps-1)] = 3  # source_3
@@ -422,19 +425,63 @@ class MixtureOfExperts(nn.Module):
             source_labels[(4*n_output_fmaps):(5*n_output_fmaps-1)] = 5  # source_5
 
             # Get the sources of the top n values
-            top_sources = source_labels[top_indices]
+            top_sources = source_labels[top_indices].cuda()
 
             # Count occurrences of each source
             source_counts = {f"source_{i}": (top_sources == i).sum().item() for i in range(1, 6)}
 
             total_selected = len(top_sources)
             source_ratios = {key: count / total_selected for key, count in source_counts.items()}
-            ratios = ratios + torch.tensor(list(source_ratios.values()))
+            ratios = ratios + torch.tensor(list(source_ratios.values())).cuda()
         
         ratios = ratios / n_output_fmaps
 
         return ratios
+    
+    def get_importance_from_weights_v2(self, weights: torch.Tensor) -> torch.Tensor:
 
+        # # Example settings
+        # b, f, h, w, d = 2, 160, 32, 32, 32  # f = m * k (e.g., 4 encoders with 4 feature maps each)
+        # n = 32  # Number of output feature maps
+        # m = 5  # Number of encoders
+        # k = f // m  # Feature maps per encoder
+
+        # # Define 1x1x1 convolution layer
+        # conv1x1x1 = torch.nn.Conv3d(in_channels=f, out_channels=n, kernel_size=1, bias=False)
+
+        # # Extract the weight matrix (shape: [n, f, 1, 1, 1] -> squeeze to [n, f])
+        # weight_matrix = conv1x1x1.weight.detach().cpu().squeeze()  # Shape (n, f)
+
+        f = weights.shape[1]
+        n = weights.shape[0]
+        m = 5
+        k = f//m
+        weight_matrix = weights.detach().cpu().squeeze()
+
+        # Compute feature importance: sum of absolute values of weights per feature map
+        feature_importance = weight_matrix.abs().sum(dim=0)  # Shape (f,)
+
+        # Get the top n most important feature map indices
+        important_feature_indices = torch.argsort(feature_importance, descending=True)[:n]
+
+        # Compute encoder contribution ratios
+        encoder_counts = torch.zeros(m)  # Count of selected features per encoder
+        for idx in important_feature_indices:
+            encoder_id = idx // k  # Determine encoder index
+            encoder_counts[encoder_id] += 1
+
+        # Normalize to get ratios
+        encoder_ratios = encoder_counts / n
+
+        # Print results
+        # print("Most important feature indices:", important_feature_indices.tolist())
+        # print("Feature importance scores:", feature_importance[important_feature_indices].tolist())
+        # print("Feature count per encoder:", encoder_counts.tolist())
+        # print("Encoder contribution ratios:", encoder_ratios.tolist())
+
+        encoder_ratios = torch.tensor(encoder_ratios.tolist(), dtype=torch.float32)
+
+        return encoder_ratios
 
 
 if __name__ == "__main__":
