@@ -438,24 +438,14 @@ class MixtureOfExperts(nn.Module):
 
         return ratios
     
-    def get_importance_from_weights_v2(self, weights: torch.Tensor) -> torch.Tensor:
-
-        # # Example settings
-        # b, f, h, w, d = 2, 160, 32, 32, 32  # f = m * k (e.g., 4 encoders with 4 feature maps each)
-        # n = 32  # Number of output feature maps
-        # m = 5  # Number of encoders
-        # k = f // m  # Feature maps per encoder
-
-        # # Define 1x1x1 convolution layer
-        # conv1x1x1 = torch.nn.Conv3d(in_channels=f, out_channels=n, kernel_size=1, bias=False)
-
-        # # Extract the weight matrix (shape: [n, f, 1, 1, 1] -> squeeze to [n, f])
-        # weight_matrix = conv1x1x1.weight.detach().cpu().squeeze()  # Shape (n, f)
+    def get_importance_from_weights_v2(self, weights: torch.Tensor, print_results:bool = False) -> torch.Tensor:
 
         f = weights.shape[1]
         n = weights.shape[0]
         m = 5
         k = f//m
+
+        # Extract the weight matrix (shape: [n, f, 1, 1, 1] -> squeeze to [n, f])
         weight_matrix = weights.detach().cpu().squeeze()
 
         # Compute feature importance: sum of absolute values of weights per feature map
@@ -473,11 +463,11 @@ class MixtureOfExperts(nn.Module):
         # Normalize to get ratios
         encoder_ratios = encoder_counts / n
 
-        # Print results
-        # print("Most important feature indices:", important_feature_indices.tolist())
-        # print("Feature importance scores:", feature_importance[important_feature_indices].tolist())
-        # print("Feature count per encoder:", encoder_counts.tolist())
-        # print("Encoder contribution ratios:", encoder_ratios.tolist())
+        if print_results:
+            print("Most important feature indices:", important_feature_indices.tolist())
+            print("Feature importance scores:", feature_importance[important_feature_indices].tolist())
+            print("Feature count per encoder:", encoder_counts.tolist())
+            print("Encoder contribution ratios:", encoder_ratios.tolist())
 
         encoder_ratios = torch.tensor(encoder_ratios.tolist(), dtype=torch.float32)
 
