@@ -3,6 +3,8 @@ import torch.nn as nn
 from typing import Literal
 from monai.networks.blocks import Convolution
 from monai.networks.layers.factories import Act, Conv, Norm, Pool, split_args
+import matplotlib.pyplot as plt
+import numpy as np
 
 class ConvDropoutNormReLU(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, dropout_prob=0.0):
@@ -401,11 +403,12 @@ class MixtureOfExperts(nn.Module):
             # Vertebrae
             # TODO: implement
 
-        self.scores = torch.zeros(len(self.encoders))
         self.num_encoders = len(self.encoders)
         self.num_encoder_stages = len(self.encoders[0].stages)
         self.channel_attention = nn.ModuleList([nn.Identity()]*self.num_encoder_stages)
         self.encoders = nn.ModuleList(self.encoders)        
+        self.scores = [torch.zeros(self.num_encoders)]*self.num_encoder_stages+1
+        self.scores_list = []
 
         #############################################
         # Decoder (shared) ##########################
@@ -503,8 +506,36 @@ class MixtureOfExperts(nn.Module):
             # Calculate encoder scores
             for i in range(self.num_encoder_stages):
                 scores = [self.get_importance_from_weights(weights=self.conv1x1x1[i].weight)][0]
-                self.scores = self.scores + scores
-                self.scores = self.scores / torch.sum(self.scores)                       
+                self.scores[i] = self.scores[i] + scores
+                self.scores[-1] = self.scores[-1] + scores
+                self.scores[i] = self.scores[i] / torch.sum(self.scores[i])              
+                self.scores[-1] = self.scores[-1] / torch.sum(self.scores[-1])              
+
+        if (epoch+1) % self.score_eval_n_epochs == 1:
+            
+            self.scores_list.extend([torch.unsqueeze(tensor, dim=0) for tensor in self.scores])
+            scores_tensor = torch.concat(self.scores_list, dim=0)
+
+            for i in range(len(self.scores)):
+                x = torch.arange(scores_tensor.shape[0]).numpy()
+                y = scores_tensor.select(1, i).numpy()
+
+                if (i+1) == len(self.scores):
+                    plt.figure(figsize=(18,10))
+                    plt.plot(x, y)
+                    plt.title("Mean Score of all Encoder Stages")
+                    plt.show()
+                    plt.savefig("./mean_scores_all_stages.png")
+                    plt.close()
+
+                else:
+                    plt.figure(figsize=(18,10))
+                    plt.plot(x, y)
+                    plt.title(f"Scores of Encoder Stage {str(i).zfill(3)}")
+                    plt.show()
+                    plt.savefig(f"./scores_encoder_stage{str(i).zfill(3)}.png")
+                    plt.close()
+
 
         if epoch == self.unfreeze_epoch+1:
             
