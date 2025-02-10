@@ -34,7 +34,7 @@ from sklearn.model_selection import KFold
 ############################################
 task = "Task09_Spleen"
 splits = 5
-epochs = 1000
+epochs = 500
 ############################################
 print_config()
 
@@ -139,9 +139,16 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(data_dicts)):
     #     num_res_units=2,
     #     norm=Norm.BATCH,
     # ).to(device)
-    model = MixtureOfExperts().to(device)
+    model = MixtureOfExperts(num_classes = 2, 
+                             unfreeze_epoch = 250, 
+                             se_type = "simple", 
+                             modality = "CT", 
+                             decoder_dropout = 0.0, 
+                             score_eval_n_epochs = 10,
+                             results_dir=root_dir).to(device)
+    
     loss_function = DiceLoss(to_onehot_y=True, softmax=True)
-    optimizer = torch.optim.Adam(model.parameters(), 1e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), 1e-4)
     dice_metric = DiceMetric(include_background=False, reduction="mean")
 
     max_epochs = epochs
