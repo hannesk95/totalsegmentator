@@ -144,7 +144,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(data_dicts)):
                              se_type = "simple", 
                              modality = "CT", 
                              decoder_dropout = 0.0, 
-                             score_eval_n_epochs = 10,
+                             score_eval_n_epochs = 2,
                              results_dir=root_dir).to(device)
     
     loss_function = DiceLoss(to_onehot_y=True, softmax=True)
