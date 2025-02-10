@@ -5,6 +5,7 @@ from monai.networks.blocks import Convolution
 from monai.networks.layers.factories import Act, Conv, Norm, Pool, split_args
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 class ConvDropoutNormReLU(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, dropout_prob=0.0):
@@ -333,7 +334,8 @@ class MixtureOfExperts(nn.Module):
                  se_type: Literal["simple", "advanced"] = None, 
                  modality: Literal["CT", "MRI"] = "CT", 
                  decoder_dropout: float = 0.0, 
-                 score_eval_n_epochs: int = 10):
+                 score_eval_n_epochs: int = 10,
+                 results_dir: str = ""):
         super().__init__()
 
         self.num_classes = num_classes
@@ -342,7 +344,9 @@ class MixtureOfExperts(nn.Module):
         self.modality = modality
         self.decoder_dropout = decoder_dropout
         self.score_eval_n_epochs = score_eval_n_epochs
-        self.encoders = []           
+        self.results_dir = results_dir
+        self.encoders = []
+        self.trigger = False           
 
         #############################################
         # Encoders ##################################
@@ -406,9 +410,10 @@ class MixtureOfExperts(nn.Module):
         self.num_encoders = len(self.encoders)
         self.num_encoder_stages = len(self.encoders[0].stages)
         self.channel_attention = nn.ModuleList([nn.Identity()]*self.num_encoder_stages)
-        self.encoders = nn.ModuleList(self.encoders)        
-        self.scores = [torch.zeros(self.num_encoders)]*self.num_encoder_stages+1
-        self.scores_list = []
+        self.encoders = nn.ModuleList(self.encoders)  
+
+        self.scores = [torch.zeros(self.num_encoders)]*(self.num_encoder_stages+1)
+        self.scores_list = [[] for _ in range(self.num_encoder_stages+1)]
 
         #############################################
         # Decoder (shared) ##########################
@@ -510,49 +515,62 @@ class MixtureOfExperts(nn.Module):
                 scores = [self.get_importance_from_weights(weights=self.conv1x1x1[i].weight)][0]
                 
                 self.scores[i] = self.scores[i] + scores
-                self.scores[i] = self.scores[i] / torch.sum(self.scores[i])
+                # self.scores[i] = self.scores[i] / torch.sum(self.scores[i])
 
                 self.scores[-1] = self.scores[-1] + scores                              
-                self.scores[-1] = self.scores[-1] / torch.sum(self.scores[-1])              
+                # self.scores[-1] = self.scores[-1] / torch.sum(self.scores[-1]) 
 
-        if (epoch+1) % self.score_eval_n_epochs == 1:
+            self.trigger = True             
+
+        if ((epoch+1) % self.score_eval_n_epochs == 1) and (self.trigger):
             
-            self.scores_list.extend([torch.unsqueeze(tensor, dim=0) for tensor in self.scores])
-            scores_tensor = torch.concat(self.scores_list, dim=0)
+            self.scores = [scores / torch.sum(scores) for scores in self.scores]
+            for i in range(len(self.scores_list)):
+                self.scores_list[i].append(self.scores[i])
+    
+            for idx, stage_scores in enumerate(self.scores_list):                
+                stage_scores = [torch.unsqueeze(scores, dim=0) for scores in stage_scores]
+                stage_scores = torch.concat(stage_scores, dim=0)
+                temp_x = torch.arange(stage_scores.shape[0]).numpy()
 
-            for i in range(len(self.scores)):
-                x = torch.arange(scores_tensor.shape[0]).numpy()
-                y = scores_tensor.select(1, i).numpy()
-
-                if (i+1) == len(self.scores):
+                if (idx+1) == len(self.scores_list):
                     plt.figure(figsize=(18,10))
-                    plt.plot(x, y)
+                    for i in range(self.num_encoders):
+                        plt.plot(temp_x, stage_scores.select(1, i).numpy(), label=f"Encoder{i}")
                     plt.title("Mean Score of all Encoder Stages")
+                    plt.legend()
+                    plt.grid()
                     plt.show()
-                    plt.savefig("./mean_scores_all_stages.png")
+                    plt.savefig(os.path.join(self.results_dir, "scores_mean_all_stages.png"))
                     plt.close()
 
                 else:
                     plt.figure(figsize=(18,10))
-                    plt.plot(x, y)
-                    plt.title(f"Scores of Encoder Stage {str(i).zfill(3)}")
+                    for i in range(self.num_encoders):
+                        plt.plot(temp_x, stage_scores.select(1, i).numpy(), label=f"Encoder{i}")
+                    plt.title(f"Scores of Encoder Stage {str(idx).zfill(3)}")
+                    plt.legend()
+                    plt.grid()
                     plt.show()
-                    plt.savefig(f"./scores_encoder_stage{str(i).zfill(3)}.png")
+                    plt.savefig(os.path.join(self.results_dir, f"scores_encoder_stage{str(idx).zfill(3)}.png"))
                     plt.close()
+            
+            self.trigger = False
+            # self.scores = [torch.zeros(self.num_encoders)]*(self.num_encoder_stages+1)
 
 
         if epoch == self.unfreeze_epoch+1:
             
-            enc_idx = torch.argmax(self.scores).item()
+            enc_idx = torch.argmax(self.scores[-1]).item()
             for param in self.encoders[enc_idx].parameters():
                 param.requires_grad = True 
 
             print(f"Unfreezing encoder: {enc_idx}")
-            print(f"All encoder scores: {self.scores}")       
+            print(f"All encoder scores: {self.scores[-1]}")       
 
-            with open('encoder_scores.txt', 'a') as file:     
+            with open(os.path.join(self.results_dir, 'encoder_scores.txt'), 'a') as file:     
                 print(f"Unfreezing encoder: {enc_idx}", file=file)
-                print(f"All encoder scores: {self.scores}", file=file)            
+                print(f"All encoder scores: {self.scores[-1]}", file=file)            
        
         seg_outputs = []
         for i in range(len(self.stages)):
@@ -567,7 +585,7 @@ class MixtureOfExperts(nn.Module):
 
         f = weights.shape[1]
         n = weights.shape[0]
-        m = 5
+        m = self.num_encoders
         k = f//m
 
         # Extract the weight matrix (shape: [n, f, 1, 1, 1] -> squeeze to [n, f])
