@@ -414,21 +414,23 @@ class MixtureOfExperts(nn.Module):
         # Decoder (shared) ##########################
         #############################################
         
-        self.stages = nn.ModuleList([
-            StackedConvBlocks(640, 320, 320, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),
-            StackedConvBlocks(512, 256, 256, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),  
-            StackedConvBlocks(256, 128, 128, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),
-            StackedConvBlocks(128, 64, 64, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),
-            StackedConvBlocks(64, 32, 32, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout)  
-        ])
+        # self.stages = nn.ModuleList([
+        #     StackedConvBlocks(640, 320, 320, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),
+        #     StackedConvBlocks(512, 256, 256, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),  
+        #     StackedConvBlocks(256, 128, 128, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),
+        #     StackedConvBlocks(128, 64, 64, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),
+        #     StackedConvBlocks(64, 32, 32, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout)  
+        # ])
+        self.stages = self.unet_organ.model.decoder.stages
 
-        self.transpconvs = nn.ModuleList([
-            nn.ConvTranspose3d(320, 320, kernel_size=(2, 2, 2), stride=(2, 2, 2)), 
-            nn.ConvTranspose3d(320, 256, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
-            nn.ConvTranspose3d(256, 128, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
-            nn.ConvTranspose3d(128, 64, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
-            nn.ConvTranspose3d(64, 32, kernel_size=(2, 2, 2), stride=(2, 2, 2))
-        ])
+        # self.transpconvs = nn.ModuleList([
+        #     nn.ConvTranspose3d(320, 320, kernel_size=(2, 2, 2), stride=(2, 2, 2)), 
+        #     nn.ConvTranspose3d(320, 256, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
+        #     nn.ConvTranspose3d(256, 128, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
+        #     nn.ConvTranspose3d(128, 64, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
+        #     nn.ConvTranspose3d(64, 32, kernel_size=(2, 2, 2), stride=(2, 2, 2))
+        # ])
+        self.transpconvs = self.unet_organ.model.decoder.transpconvs
         
         self.seg_layers = nn.ModuleList([
             nn.Conv3d(320, self.num_classes, kernel_size=(1, 1, 1), stride=(1, 1, 1)),
@@ -506,9 +508,11 @@ class MixtureOfExperts(nn.Module):
             # Calculate encoder scores
             for i in range(self.num_encoder_stages):
                 scores = [self.get_importance_from_weights(weights=self.conv1x1x1[i].weight)][0]
+                
                 self.scores[i] = self.scores[i] + scores
-                self.scores[-1] = self.scores[-1] + scores
-                self.scores[i] = self.scores[i] / torch.sum(self.scores[i])              
+                self.scores[i] = self.scores[i] / torch.sum(self.scores[i])
+
+                self.scores[-1] = self.scores[-1] + scores                              
                 self.scores[-1] = self.scores[-1] / torch.sum(self.scores[-1])              
 
         if (epoch+1) % self.score_eval_n_epochs == 1:
