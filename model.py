@@ -6,6 +6,7 @@ from monai.networks.layers.factories import Act, Conv, Norm, Pool, split_args
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import torch.nn.functional as F
 
 class ConvDropoutNormReLU(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, dropout_prob=0.0):
@@ -37,22 +38,33 @@ class StackedConvBlocks(nn.Module):
         return self.convs(x)
 
 class PlainConvEncoder(nn.Module):
-    def __init__(self, in_channels=1, dropout=0.0):
+    def __init__(self, in_channels=1, dropout=0.0, hepatic_vessel=False):
         super().__init__()
-        self.stages = nn.Sequential(
-            StackedConvBlocks(in_channels, 32, 32, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=dropout),  
-            StackedConvBlocks(32, 64, 64, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout),
-            StackedConvBlocks(64, 128, 128, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout),
-            StackedConvBlocks(128, 256, 256, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout),
-            StackedConvBlocks(256, 320, 320, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout),
-            StackedConvBlocks(320, 320, 320, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout)
-        )
+
+        if hepatic_vessel:
+            self.stages = nn.Sequential(
+                StackedConvBlocks(in_channels, 32, 32, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=dropout),  
+                StackedConvBlocks(32, 64, 64, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout),
+                StackedConvBlocks(64, 128, 128, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout),
+                StackedConvBlocks(128, 256, 256, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout),
+                StackedConvBlocks(256, 320, 320, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout),
+                StackedConvBlocks(320, 320, 320, kernel_size=3, in_stride=(1,2,2), out_stride=1, padding=1, dropout=dropout)
+            )
+        else:
+            self.stages = nn.Sequential(
+                StackedConvBlocks(in_channels, 32, 32, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=dropout),  
+                StackedConvBlocks(32, 64, 64, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout),
+                StackedConvBlocks(64, 128, 128, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout),
+                StackedConvBlocks(128, 256, 256, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout),
+                StackedConvBlocks(256, 320, 320, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout),
+                StackedConvBlocks(320, 320, 320, kernel_size=3, in_stride=2, out_stride=1, padding=1, dropout=dropout)
+            )
 
     def forward(self, x):
         return self.stages(x)
 
 class UNetDecoder(nn.Module):
-    def __init__(self, encoder, num_classes=3, dropout=0.0):
+    def __init__(self, encoder, num_classes=3, dropout=0.0, hepatic_vessel=False):
         super().__init__()
         self.encoder = encoder
         
@@ -64,7 +76,16 @@ class UNetDecoder(nn.Module):
             StackedConvBlocks(64, 32, 32, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=dropout),  
         ])
 
-        self.transpconvs = nn.ModuleList([
+        if hepatic_vessel:
+            self.transpconvs = nn.ModuleList([
+                nn.ConvTranspose3d(320, 320, kernel_size=(1, 2, 2), stride=(1, 2, 2)), 
+                nn.ConvTranspose3d(320, 256, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
+                nn.ConvTranspose3d(256, 128, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
+                nn.ConvTranspose3d(128, 64, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
+                nn.ConvTranspose3d(64, 32, kernel_size=(2, 2, 2), stride=(2, 2, 2)), 
+            ])
+        else:
+            self.transpconvs = nn.ModuleList([
             nn.ConvTranspose3d(320, 320, kernel_size=(2, 2, 2), stride=(2, 2, 2)), 
             nn.ConvTranspose3d(320, 256, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
             nn.ConvTranspose3d(256, 128, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
@@ -98,19 +119,19 @@ class UNetDecoder(nn.Module):
         return seg_outputs[-1]
 
 class PlainConvUNet(nn.Module):
-    def __init__(self, in_channels=1, num_classes=3, dropout=0.0):
+    def __init__(self, in_channels=1, num_classes=3, dropout=0.0, hepatic_vessel=False):
         super().__init__()
-        self.encoder = PlainConvEncoder(in_channels, dropout)
-        self.decoder = UNetDecoder(self.encoder, num_classes, dropout)
+        self.encoder = PlainConvEncoder(in_channels, dropout, hepatic_vessel)
+        self.decoder = UNetDecoder(self.encoder, num_classes, dropout, hepatic_vessel)
 
     def forward(self, x):
         return self.decoder(x)
     
 class UNet(nn.Module):
-    def __init__(self, in_channels=1, num_classes=3, dropout=0.0, pretrain_path=None):
+    def __init__(self, in_channels=1, num_classes=3, dropout=0.0, pretrain_path=None, hepatic_vessel=False):
         super().__init__()
 
-        self.model = PlainConvUNet(in_channels, num_classes, dropout)
+        self.model = PlainConvUNet(in_channels, num_classes, dropout, hepatic_vessel)
 
         if pretrain_path:
             print("Loading weights from pretrained model!")
@@ -353,15 +374,21 @@ class MixtureOfExperts(nn.Module):
         #############################################
 
         if self.modality == "CT":
+            # -------------------------
             # Organ
+            # -------------------------
             self.unet_organ = UNet(pretrain_path="./data/pretrained_weights/CT/Dataset291_TotalSegmentator_part1_organs_1559subj/Dataset291_TotalSegmentator_part1_organs_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
                                    num_classes=25)
             for param in self.unet_organ.parameters():
                 param.requires_grad = False        
             # self.encoder1 = self.unet_organ.model.encoder
             self.encoders.append(self.unet_organ.model.encoder)
+
+            self.unet_organ.model.encoder.stages
             
+            # -------------------------
             # Vertebrae
+            # -------------------------
             self.unet_vertebrae = UNet(pretrain_path="./data/pretrained_weights/CT/Dataset292_TotalSegmentator_part2_vertebrae_1532subj/Dataset292_TotalSegmentator_part2_vertebrae_1532subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
                                        num_classes=27)
             for param in self.unet_vertebrae.parameters():
@@ -369,7 +396,9 @@ class MixtureOfExperts(nn.Module):
             # self.encoder2 = self.unet_vertebrae.model.encoder
             self.encoders.append(self.unet_vertebrae.model.encoder)
             
+            # -------------------------
             # Cardiac
+            # -------------------------
             self.unet_cardiac = UNet(pretrain_path="./data/pretrained_weights/CT/Dataset293_TotalSegmentator_part3_cardiac_1559subj/Dataset293_TotalSegmentator_part3_cardiac_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
                                      num_classes=19)
             for param in self.unet_cardiac.parameters():
@@ -377,7 +406,9 @@ class MixtureOfExperts(nn.Module):
             # self.encoder3 = self.unet_cardiac.model.encoder
             self.encoders.append(self.unet_cardiac.model.encoder)
             
+            # -------------------------
             # Muscle
+            # -------------------------
             self.unet_muscle = UNet(pretrain_path="./data/pretrained_weights/CT/Dataset294_TotalSegmentator_part4_muscles_1559subj/Dataset294_TotalSegmentator_part4_muscles_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
                                     num_classes=24)
             for param in self.unet_muscle.parameters():
@@ -385,7 +416,9 @@ class MixtureOfExperts(nn.Module):
             # self.encoder4 = self.unet_muscle.model.encoder
             self.encoders.append(self.unet_muscle.model.encoder)
 
+            # -------------------------
             # Ribs
+            # -------------------------
             self.unet_ribs = UNet(pretrain_path="./data/pretrained_weights/CT/Dataset295_TotalSegmentator_part5_ribs_1559subj/Dataset295_TotalSegmentator_part5_ribs_1559subj/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
                                   num_classes=27)
             for param in self.unet_ribs.parameters():
@@ -393,8 +426,16 @@ class MixtureOfExperts(nn.Module):
             # self.encoder5 = self.unet_ribs.model.encoder
             self.encoders.append(self.unet_ribs.model.encoder)
             
-            # Heptic Vessel
-            # TODO: implement
+            # -------------------------
+            # Hepatic Vessel
+            # -------------------------
+            self.unet_hepatic_vessel = UNet(pretrain_path="./data/pretrained_weights/CT/Dataset008_HepaticVessel/nnUNetTrainer__nnUNetPlans__3d_fullres/fold_0/checkpoint_final.pth",
+                                            num_classes=3,
+                                            hepatic_vessel=True)
+            for param in self.unet_hepatic_vessel.parameters():
+                param.requires_grad = False
+            # self.encoder6 = self.unet_hepatic_vessel.model.encoder
+            self.encoders.append(self.unet_hepatic_vessel.model.encoder)
         
         elif self.modality == "MRI":
             pass
@@ -500,7 +541,11 @@ class MixtureOfExperts(nn.Module):
         temp = []
         for i in range(self.num_encoder_stages):
             # Concat same stages of encoders on feature map dimension
-            out = torch.concat(encoder_outputs[i::self.num_encoder_stages], dim=1)
+            if (i+1) == self.num_encoder_stages: # only for hepatic liver encoder
+                encoder_outputs[-1] = F.interpolate(encoder_outputs[-1], size=(4,4,4), mode="trilinear", align_corners=False)
+                out = torch.concat(encoder_outputs[i::self.num_encoder_stages], dim=1)
+            else:
+                out = torch.concat(encoder_outputs[i::self.num_encoder_stages], dim=1)
             # Apply channel attention to concatenated features
             out = self.channel_attention[i](out)
             # Reduce feature map dimension to dimension of a single encoder
