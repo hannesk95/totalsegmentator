@@ -634,6 +634,36 @@ class MixtureOfExperts(nn.Module):
         k = f//m
 
         # Extract the weight matrix (shape: [n, f, 1, 1, 1] -> squeeze to [n, f])
+        weight_matrix = weights.detach().cpu().squeeze().abs()
+
+        scores = torch.zeros(m)
+        for i in range(weight_matrix.shape[0]):
+            temp = weight_matrix[i]
+            for j in range(m):
+                scores[j] = scores[j] + torch.sum(temp[j*n:(j+1)*n])
+        
+        scores = scores / torch.sum(scores)
+        return scores
+
+
+        # if print_results:
+        #     print("Most important feature indices:", important_feature_indices.tolist())
+        #     print("Feature importance scores:", feature_importance[important_feature_indices].tolist())
+        #     print("Feature count per encoder:", encoder_counts.tolist())
+        #     print("Encoder contribution ratios:", encoder_ratios.tolist())
+
+        # encoder_ratios = torch.tensor(encoder_ratios.tolist(), dtype=torch.float32)
+
+        # return encoder_ratios
+    
+    def get_importance_from_weights_old(self, weights: torch.Tensor, print_results:bool = False) -> torch.Tensor:
+
+        f = weights.shape[1]
+        n = weights.shape[0]
+        m = self.num_encoders
+        k = f//m
+
+        # Extract the weight matrix (shape: [n, f, 1, 1, 1] -> squeeze to [n, f])
         weight_matrix = weights.detach().cpu().squeeze()
 
         # Compute feature importance: sum of absolute values of weights per feature map
