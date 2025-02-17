@@ -367,6 +367,7 @@ class MixtureOfExperts(nn.Module):
         self.score_eval_n_epochs = score_eval_n_epochs
         self.results_dir = results_dir
         self.encoders = []
+        self.unets = []
         self.trigger = False           
 
         #############################################
@@ -382,6 +383,7 @@ class MixtureOfExperts(nn.Module):
             for param in self.unet_organ.parameters():
                 param.requires_grad = False        
             # self.encoder1 = self.unet_organ.model.encoder
+            self.unets.append(self.unet_organ)
             self.encoders.append(self.unet_organ.model.encoder)
 
             self.unet_organ.model.encoder.stages
@@ -394,6 +396,7 @@ class MixtureOfExperts(nn.Module):
             for param in self.unet_vertebrae.parameters():
                 param.requires_grad = False        
             # self.encoder2 = self.unet_vertebrae.model.encoder
+            self.unets.append(self.unet_vertebrae)
             self.encoders.append(self.unet_vertebrae.model.encoder)
             
             # -------------------------
@@ -404,6 +407,7 @@ class MixtureOfExperts(nn.Module):
             for param in self.unet_cardiac.parameters():
                 param.requires_grad = False        
             # self.encoder3 = self.unet_cardiac.model.encoder
+            self.unets.append(self.unet_cardiac)
             self.encoders.append(self.unet_cardiac.model.encoder)
             
             # -------------------------
@@ -414,6 +418,7 @@ class MixtureOfExperts(nn.Module):
             for param in self.unet_muscle.parameters():
                 param.requires_grad = False
             # self.encoder4 = self.unet_muscle.model.encoder
+            self.unets.append(self.unet_muscle)
             self.encoders.append(self.unet_muscle.model.encoder)
 
             # -------------------------
@@ -424,6 +429,7 @@ class MixtureOfExperts(nn.Module):
             for param in self.unet_ribs.parameters():
                 param.requires_grad = False
             # self.encoder5 = self.unet_ribs.model.encoder
+            self.unets.append(self.unet_ribs)
             self.encoders.append(self.unet_ribs.model.encoder)
             
             # -------------------------
@@ -435,6 +441,7 @@ class MixtureOfExperts(nn.Module):
             for param in self.unet_hepatic_vessel.parameters():
                 param.requires_grad = False
             # self.encoder6 = self.unet_hepatic_vessel.model.encoder
+            self.unets.append(self.unet_hepatic_vessel)
             self.encoders.append(self.unet_hepatic_vessel.model.encoder)
         
         elif self.modality == "MRI":
@@ -451,7 +458,9 @@ class MixtureOfExperts(nn.Module):
         self.num_encoders = len(self.encoders)
         self.num_encoder_stages = len(self.encoders[0].stages)
         self.channel_attention = nn.ModuleList([nn.Identity()]*self.num_encoder_stages)
-        self.encoders = nn.ModuleList(self.encoders)  
+        self.encoders = nn.ModuleList(self.encoders) 
+        self.unets_loss = torch.zeros(self.num_encoders) 
+        self.unets_loss_trigger = True
 
         self.scores = [torch.zeros(self.num_encoders)]*(self.num_encoder_stages+1)
         self.scores_list = [[] for _ in range(self.num_encoder_stages+1)]
@@ -460,23 +469,23 @@ class MixtureOfExperts(nn.Module):
         # Decoder (shared) ##########################
         #############################################
         
-        # self.stages = nn.ModuleList([
-        #     StackedConvBlocks(640, 320, 320, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),
-        #     StackedConvBlocks(512, 256, 256, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),  
-        #     StackedConvBlocks(256, 128, 128, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),
-        #     StackedConvBlocks(128, 64, 64, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),
-        #     StackedConvBlocks(64, 32, 32, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout)  
-        # ])
-        self.stages = self.unet_organ.model.decoder.stages
+        self.stages = nn.ModuleList([
+            StackedConvBlocks(640, 320, 320, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),
+            StackedConvBlocks(512, 256, 256, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),  
+            StackedConvBlocks(256, 128, 128, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),
+            StackedConvBlocks(128, 64, 64, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout),
+            StackedConvBlocks(64, 32, 32, kernel_size=3, in_stride=1, out_stride=1, padding=1, dropout=self.decoder_dropout)  
+        ])
+        # self.stages = self.unet_organ.model.decoder.stages
 
-        # self.transpconvs = nn.ModuleList([
-        #     nn.ConvTranspose3d(320, 320, kernel_size=(2, 2, 2), stride=(2, 2, 2)), 
-        #     nn.ConvTranspose3d(320, 256, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
-        #     nn.ConvTranspose3d(256, 128, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
-        #     nn.ConvTranspose3d(128, 64, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
-        #     nn.ConvTranspose3d(64, 32, kernel_size=(2, 2, 2), stride=(2, 2, 2))
-        # ])
-        self.transpconvs = self.unet_organ.model.decoder.transpconvs
+        self.transpconvs = nn.ModuleList([
+            nn.ConvTranspose3d(320, 320, kernel_size=(2, 2, 2), stride=(2, 2, 2)), 
+            nn.ConvTranspose3d(320, 256, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
+            nn.ConvTranspose3d(256, 128, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
+            nn.ConvTranspose3d(128, 64, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
+            nn.ConvTranspose3d(64, 32, kernel_size=(2, 2, 2), stride=(2, 2, 2))
+        ])
+        # self.transpconvs = self.unet_organ.model.decoder.transpconvs
         
         self.seg_layers = nn.ModuleList([
             nn.Conv3d(320, self.num_classes, kernel_size=(1, 1, 1), stride=(1, 1, 1)),
@@ -527,7 +536,30 @@ class MixtureOfExperts(nn.Module):
             nn.Conv3d(in_channels=self.num_encoders*320, out_channels=320, kernel_size=1, bias=False)
         ])
 
-    def forward(self, x, epoch=-1):
+    def forward(self, x, epoch=-1, loss_fn=None, labels=None):
+
+        if (epoch == 0) and (loss_fn != None) and (labels != None):
+
+            print("Epoch 0 --> Checking for best decoder initialization...")
+
+            for idx, unet in enumerate(self.unets):
+                out = unet(x)
+                out = out[:, 0:1, :, :, :]
+                loss = loss_fn(out, labels)
+                self.unets_loss[idx] = self.unets_loss[idx] + loss.item()
+
+        if (epoch == 1) and (self.unets_loss_trigger == True):
+            print(f"All UNet losses for epoch 0: {self.unets_loss}")
+            unet_idx = torch.argmin(self.unets_loss)
+            print(f"Best decoder initalization from model with idx: {unet_idx}")
+
+            # self.stages = self.unet_organ.model.decoder.stages
+            self.stages = self.unets[unet_idx].model.decoder.stages
+            # self.transpconvs = self.unet_organ.model.decoder.transpconvs
+            self.transpconvs = self.unets[unet_idx].model.decoder.transpconvs
+
+            self.unets_loss_trigger = False
+
 
         # Encode x using all encoders and append stage ouputs to list
         temp = x
