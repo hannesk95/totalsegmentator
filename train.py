@@ -33,6 +33,7 @@ from sklearn.model_selection import KFold
 
 ############################################
 task = "Task09_Spleen"
+# task = "Task06_Lung"
 splits = 5
 epochs = 500
 ############################################
@@ -83,7 +84,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(data_dicts)):
             RandCropByPosNegLabeld(
                 keys=["image", "label"],
                 label_key="label",
-                spatial_size=(96, 96, 96),
+                spatial_size=(128, 128, 128),
                 pos=1,
                 neg=1,
                 num_samples=4,
@@ -173,7 +174,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(data_dicts)):
                 batch_data["label"].to(device),
             )
             optimizer.zero_grad()
-            outputs = model(inputs, epoch=epoch)
+            outputs = model(inputs, epoch=epoch, loss_fn=loss_function, labels=labels)
             loss = loss_function(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -192,7 +193,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(data_dicts)):
                         val_data["image"].to(device),
                         val_data["label"].to(device),
                     )
-                    roi_size = (96, 96, 96)
+                    roi_size = (128, 128, 128)
                     sw_batch_size = 4
                     val_outputs = sliding_window_inference(val_inputs, roi_size, sw_batch_size, model)
                     val_outputs = [post_pred(i) for i in decollate_batch(val_outputs)]
