@@ -574,7 +574,9 @@ class MixtureOfExperts(nn.Module):
         for i in range(self.num_encoder_stages):
             # Concat same stages of encoders on feature map dimension
             if (i+1) == self.num_encoder_stages: # only for hepatic liver encoder
-                encoder_outputs[-1] = F.interpolate(encoder_outputs[-1], size=(4,4,4), mode="trilinear", align_corners=False)
+                size = tuple(encoder_outputs[self.num_encoders-1].shape[2:])
+                # encoder_outputs[-1] = F.interpolate(encoder_outputs[-1], size=(4,4,4), mode="trilinear", align_corners=False)
+                encoder_outputs[-1] = F.interpolate(encoder_outputs[-1], size=size, mode="trilinear", align_corners=False)
                 out = torch.concat(encoder_outputs[i::self.num_encoder_stages], dim=1)
             else:
                 out = torch.concat(encoder_outputs[i::self.num_encoder_stages], dim=1)
@@ -726,7 +728,8 @@ class MixtureOfExperts(nn.Module):
 
 if __name__ == "__main__":
 
-    input_tensor = torch.randn(2, 1, 128, 128, 128)  
+    input_tensor = torch.randn(2, 1, 64, 192, 128)  
+    # input_tensor = torch.randn(2, 1, 128, 128, 128)  
     
     model = MixtureOfExperts(num_classes=2,                             
                              unfreeze_epoch=1000, 
